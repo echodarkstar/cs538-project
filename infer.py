@@ -20,11 +20,11 @@ def get_predictions(probs):
 
     return confidence, pred
 
-def infer(tokenizer, model, batch_of_pairs, labels):
+def infer(tokenizer, model, batch_of_pairs, labels, device):
 
     batch_inputs =  [torch.tensor(tokenizer.encode(*pair,add_special_tokens=True)) for pair in batch_of_pairs]
     
-    padded_batch = torch.nn.utils.rnn.pad_sequence(batch_inputs, batch_first=True, padding_value = -1)
+    padded_batch = torch.nn.utils.rnn.pad_sequence(batch_inputs, batch_first=True, padding_value = -1).to(device)
     mask = torch.zeros_like(padded_batch)
     mask[padded_batch!=-1] = 1
     padded_batch[padded_batch==-1] = 0
@@ -54,10 +54,12 @@ def run():
     logger = logging.getLogger(__file__)
     logger.info(pformat(args))
 
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
     tokenizer = RobertaTokenizer.from_pretrained('roberta-large-mnli')
     model = RobertaForSequenceClassification.from_pretrained('roberta-large-mnli')
 
-    # model.to('cuda')
+    model.to(device) 
     model.eval()
     batch_of_pairs = [
         ['Roberta is a heavily optimized version of BERT.', 'Roberta is not very optimized.'],
@@ -66,11 +68,11 @@ def run():
         ['Mars is very far from earth.', 'Mars is very close.'],
     ]
 
-    labels = torch.tensor([[0], [2], [1], [0]])
+    labels = torch.tensor([[0], [2], [1], [0]]).to(device)
 
     # batch_of_pairs = [["Roberta is a heavily optimized version of BERT", "Roberta is not very optimized"]]
     # labels = torch.tensor([0]).unsqueeze(0)
-    probs = infer(tokenizer, model, batch_of_pairs, labels)
+    probs = infer(tokenizer, model, batch_of_pairs, labels, device)
     confidence, pred = get_predictions(probs)
 
 if __name__=='__main__':
