@@ -1,3 +1,7 @@
+#Cache
+dataset_cache_OpenAIGPTTokenizer
+
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
