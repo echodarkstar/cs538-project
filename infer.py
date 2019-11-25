@@ -146,7 +146,9 @@ def run():
     parser.add_argument("--temperature", type=int, default=0.7, help="Sampling softmax temperature")
     parser.add_argument("--top_k", type=int, default=0, help="Filter top-k tokens before sampling (<=0: no filtering)")
     parser.add_argument("--top_p", type=float, default=0.9, help="Nucleus filtering (top-p) before sampling (<=0.0: no filtering)")
-    parser.add_argument("--create_trigger", action='store_true', help="Set to use greedy decoding instead of sampling")
+    parser.add_argument("--create_trigger", action='store_true', help="Creates triggers")
+    parser.add_argument("--split_output", action='store_true', help="Splits output to check inference")
+
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO)
@@ -291,17 +293,31 @@ def run():
             history = history[-(2*args.max_history+1):]
             out_text = tokenizer.decode(out_ids, skip_special_tokens=True)
             print(out_text)
-            out_text_list = out_text.split('.')
-            out_text_list = list(filter(None, out_text_list))
 
             #Each pair is (personality, output). Instead of having a batch, find sentence similarity using some distance metric
             #to find most relevant personality pair out of all
-            batch_of_pairs = [[personality_sent, o_text] for personality_sent in personality_sentences for o_text in out_text_list]
+            if args.split_output:
+                out_text_list = out_text.split('.')
+                out_text_list = list(filter(None, out_text_list))
+                batch_of_pairs = [[personality_sent, o_text] for personality_sent in personality_sentences for o_text in out_text_list]
+
+            else:
+                batch_of_pairs = [[personality_sent, out_text] for personality_sent in personality_sentences]
+            
             # labels = torch.tensor([[0], [2], [1], [0], [0]]).to(args.device)
             labels = torch.zeros(len(batch_of_pairs),1).long().to(args.device)
             probs = infer(inf_tokenizer, inf_model, batch_of_pairs, labels, args.device)
             confidence, pred = get_predictions(probs)
-            pprint(list(zip(batch_of_pairs, pred)))
+            print("#"*5,"Contradiction","#"*5)
+            contradiction_pairs = [val for val, ind in zip(batch_of_pairs,pred) if ind==0]
+            pprint(contradiction_pairs)
+            print("#"*5,"Neutral","#"*5)
+            neutral_pairs = [val for val, ind in zip(batch_of_pairs,pred) if ind==1]
+            pprint(neutral_pairs)
+            print("#"*5,"Entailment","#"*5)
+            entailment_pairs = [val for val, ind in zip(batch_of_pairs,pred) if ind==2]
+            pprint(entailment_pairs)
+            # pprint(list(zip(batch_of_pairs, pred)))
 
 
 if __name__=='__main__':
