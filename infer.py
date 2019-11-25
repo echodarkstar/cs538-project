@@ -3,6 +3,7 @@ import random
 from argparse import ArgumentParser
 from itertools import chain
 from pprint import pformat
+from pprint import pprint
 import warnings
 
 import torch
@@ -78,8 +79,8 @@ def get_predictions(probs):
     inferences = ['Contradiction', 'Neutral', 'Entailment']
 
     confidence, pred = torch.max(probs, 1)
-
-    print(list(zip(confidence, pred, [inferences[k] for k in pred])))
+    #print(pred)
+    #print(list(zip(confidence, pred, [inferences[k] for k in pred])))
 
     return confidence, pred
 
@@ -290,14 +291,18 @@ def run():
             history = history[-(2*args.max_history+1):]
             out_text = tokenizer.decode(out_ids, skip_special_tokens=True)
             print(out_text)
+            out_text_list = out_text.split('.')
+            out_text_list = list(filter(None, out_text_list))
 
             #Each pair is (personality, output). Instead of having a batch, find sentence similarity using some distance metric
             #to find most relevant personality pair out of all
-            batch_of_pairs = [[personality_sent, out_text] for personality_sent in personality_sentences]
-
-            labels = torch.tensor([[0], [2], [1], [0], [0]]).to(args.device)
+            batch_of_pairs = [[personality_sent, o_text] for personality_sent in personality_sentences for o_text in out_text_list]
+            # labels = torch.tensor([[0], [2], [1], [0], [0]]).to(args.device)
+            labels = torch.zeros(len(batch_of_pairs),1).long().to(args.device)
             probs = infer(inf_tokenizer, inf_model, batch_of_pairs, labels, args.device)
             confidence, pred = get_predictions(probs)
+            pprint(list(zip(batch_of_pairs, pred)))
+
 
 if __name__=='__main__':
     run()
