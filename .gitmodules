@@ -1,3 +1,6 @@
 [submodule "transfer-learning-conv-ai"]
 	path = transfer-learning-conv-ai
 	url = https://github.com/echodarkstar/transfer-learning-conv-ai.git
+[submodule "universal-triggers"]
+	path = universal-triggers
+	url = https://github.com/echodarkstar/universal-triggers.git

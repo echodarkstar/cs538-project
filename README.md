@@ -20,4 +20,8 @@ If you're modifying the submodule, the changes can be pushed to the submodule re
 
 [Submodule reference](https://git-scm.com/book/en/v2/Git-Tools-Submodules)
 
+### Notes
 
+- After installing both the dependencies of universal-triggers and transfer-conv-ai, the pytorch-transformers versions get messed up. Just do `pip install --upgrade --no-deps  pytorch-transformers==1.2.0` to make sure transfer-conv-ai works properly (this doesn't mess up universal-triggers). You might also have to download the en model via spacy (`python -m spacy download en`).
+
+- A messy aspect of using submodules is that some imports are buggy. Adding a . in front helps in resolving the issue though, but this is a very hacky and temporary fix. Be aware of how imports are happening (or move away from submodules...)
