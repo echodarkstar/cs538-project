@@ -20,6 +20,14 @@ If you're modifying the submodule, the changes can be pushed to the submodule re
 
 [Submodule reference](https://git-scm.com/book/en/v2/Git-Tools-Submodules)
 
+### Models
+
+- Pretrained models will generally be downloaded by respective scripts from their model zoos.
+
+- Finetuned models:
+
+    - `roberta-dnli` : Save this model folder in the main project directory- [v1](https://drive.google.com/drive/folders/1XYMHqrYPszg0TT3OwJP1t0RBXBlK-V8y?usp=sharing) (1 epoch) [v2](https://drive.google.com/drive/folders/1-6JEuUmZ37hFR4GzkORK6YpAToTap-hd?usp=sharing) (2 epochs)
+
 ### Notes
 
 - After installing both the dependencies of universal-triggers and transfer-conv-ai, the pytorch-transformers versions get messed up. Just do `pip install --upgrade --no-deps  pytorch-transformers==1.2.0` to make sure transfer-conv-ai works properly (this doesn't mess up universal-triggers). You might also have to download the en model via spacy (`python -m spacy download en`).

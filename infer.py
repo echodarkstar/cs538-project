@@ -76,8 +76,9 @@ def make_target_batch(tokenizer, device, target_texts):
 ######### INFERENCE RELATED FUNCTIONS #################
 
 def get_predictions(probs):
-    inferences = ['Contradiction', 'Neutral', 'Entailment']
-
+    #For roberta-mnli, the order of inferences is ['Contradiction','Neutral','Entailment']
+    #If you're using mnli, change this accordingly while printing results as well
+    inferences = ['Contradiction', 'Entailment', 'Neutral']
     confidence, pred = torch.max(probs, 1)
     #print(pred)
     #print(list(zip(confidence, pred, [inferences[k] for k in pred])))
@@ -200,8 +201,8 @@ def run():
     target_tokens = make_target_batch(tokenizer, args.device, target_texts)
 
     #Inference model
-    inf_tokenizer = RobertaTokenizer.from_pretrained('roberta-large-mnli')
-    inf_model = RobertaForSequenceClassification.from_pretrained('roberta-large-mnli')
+    inf_tokenizer = RobertaTokenizer.from_pretrained('roberta-dnli')
+    inf_model = RobertaForSequenceClassification.from_pretrained('roberta-dnli')
 
     inf_model.to(args.device) 
     inf_model.eval()
@@ -311,10 +312,10 @@ def run():
             print("#"*5,"Contradiction","#"*5)
             contradiction_pairs = [val for val, ind in zip(batch_of_pairs,pred) if ind==0]
             pprint(contradiction_pairs)
-            print("#"*5,"Neutral","#"*5)
+            print("#"*5,"Entailment","#"*5)
             neutral_pairs = [val for val, ind in zip(batch_of_pairs,pred) if ind==1]
             pprint(neutral_pairs)
-            print("#"*5,"Entailment","#"*5)
+            print("#"*5,"Neutral","#"*5)
             entailment_pairs = [val for val, ind in zip(batch_of_pairs,pred) if ind==2]
             pprint(entailment_pairs)
             # pprint(list(zip(batch_of_pairs, pred)))
