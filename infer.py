@@ -76,8 +76,9 @@ def make_target_batch(tokenizer, device, target_texts):
 ######### INFERENCE RELATED FUNCTIONS #################
 
 def get_predictions(probs):
-    inferences = ['Contradiction', 'Neutral', 'Entailment']
-
+    #For roberta-mnli, the order of inferences is ['Contradiction','Neutral','Entailment']
+    #If you're using mnli, change this accordingly while printing results as well
+    inferences = ['Contradiction', 'Entailment', 'Neutral']
     confidence, pred = torch.max(probs, 1)
     #print(pred)
     #print(list(zip(confidence, pred, [inferences[k] for k in pred])))
@@ -148,10 +149,13 @@ def run():
     parser.add_argument("--top_p", type=float, default=0.9, help="Nucleus filtering (top-p) before sampling (<=0.0: no filtering)")
     parser.add_argument("--create_trigger", action='store_true', help="Creates triggers")
     parser.add_argument("--split_output", action='store_true', help="Splits output to check inference")
-
+    parser.add_argument("--num_trials", type=int, default=1, help="Number of times a dialogue instance happens (each dialogue ends on breakage). This is for consistency evaluation.")
+    parser.add_argument("--max_utterance", type=int, default=20, help="Max number of utterances in a dialogue. End dialogue if this (or breakage) is reached, whichever happens first")
+    parser.add_argument("--log_file", type=str, default="output.log", help="Name of output log")
+    parser.add_argument("--query_type", type=str, default="basic", help="Type of input that is fed to the model")
     args = parser.parse_args()
 
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(filename=args.log_file, level=logging.INFO)
     logger = logging.getLogger(__file__)
     logger.info(pformat(args))
 
@@ -161,9 +165,15 @@ def run():
         else:
             args.model_checkpoint = interact.download_pretrained_model()
 
-    random.seed(args.seed)
-    torch.random.manual_seed(args.seed)
-    torch.cuda.manual_seed(args.seed)
+    #This seeding makes sense for reproducibility
+    #But if we want to make repeated trials and calculate some aggreate measure
+    #then randomness should be preserved
+    #this means personality sampling will also happen randomly which is nice
+    #Only seed when you aren't conducting consistency evaluation
+    if args.num_trials == 1:
+        random.seed(args.seed)
+        torch.random.manual_seed(args.seed)
+        torch.cuda.manual_seed(args.seed)
 
     logger.info("Get pretrained model and tokenizer")
     tokenizer_class, model_class = (interact.GPT2Tokenizer, interact.GPT2LMHeadModel) if args.model == 'gpt2' else (interact.OpenAIGPTTokenizer, interact.OpenAIGPTLMHeadModel)
@@ -200,8 +210,8 @@ def run():
     target_tokens = make_target_batch(tokenizer, args.device, target_texts)
 
     #Inference model
-    inf_tokenizer = RobertaTokenizer.from_pretrained('roberta-large-mnli')
-    inf_model = RobertaForSequenceClassification.from_pretrained('roberta-large-mnli')
+    inf_tokenizer = RobertaTokenizer.from_pretrained('roberta-dnli')
+    inf_model = RobertaForSequenceClassification.from_pretrained('roberta-dnli')
 
     inf_model.to(args.device) 
     inf_model.eval()
@@ -281,43 +291,131 @@ def run():
             print("Loss: " + str(best_loss.data.item()))
             print(tokenizer.decode(trigger_tokens))
     else:
-        while True:
-            raw_text = input(">>> ")
-            while not raw_text:
-                print('Prompt should not be empty!')
-                raw_text = input(">>> ")
-            history.append(tokenizer.encode(raw_text))
-            with torch.no_grad():
-                out_ids = interact.sample_sequence(personality, history, tokenizer, model, args)
-            history.append(out_ids)
-            history = history[-(2*args.max_history+1):]
-            out_text = tokenizer.decode(out_ids, skip_special_tokens=True)
-            print(out_text)
-
-            #Each pair is (personality, output). Instead of having a batch, find sentence similarity using some distance metric
-            #to find most relevant personality pair out of all
-            if args.split_output:
-                out_text_list = out_text.split('.')
-                out_text_list = list(filter(None, out_text_list))
-                batch_of_pairs = [[personality_sent, o_text] for personality_sent in personality_sentences for o_text in out_text_list]
-
-            else:
-                batch_of_pairs = [[personality_sent, out_text] for personality_sent in personality_sentences]
+        if args.num_trials !=1:
+            total_utterances = 0
+            num_breaks = 0
+            queries = [
+                'what is your job?',
+                'how many children do you have?',
+                'what kind of music do you like?',
+                'where do you work?',
+                'are you single?',
+                'how do you feel?',
+                'what is your favourite hobby?',
+                'what do you like to do?',
+                'do you have any pets?',
+                'do you like animals?'
+            ]
             
-            # labels = torch.tensor([[0], [2], [1], [0], [0]]).to(args.device)
-            labels = torch.zeros(len(batch_of_pairs),1).long().to(args.device)
-            probs = infer(inf_tokenizer, inf_model, batch_of_pairs, labels, args.device)
-            confidence, pred = get_predictions(probs)
-            print("#"*5,"Contradiction","#"*5)
-            contradiction_pairs = [val for val, ind in zip(batch_of_pairs,pred) if ind==0]
-            pprint(contradiction_pairs)
-            print("#"*5,"Neutral","#"*5)
-            neutral_pairs = [val for val, ind in zip(batch_of_pairs,pred) if ind==1]
-            pprint(neutral_pairs)
-            print("#"*5,"Entailment","#"*5)
-            entailment_pairs = [val for val, ind in zip(batch_of_pairs,pred) if ind==2]
-            pprint(entailment_pairs)
-            # pprint(list(zip(batch_of_pairs, pred)))
+            for trial in range(args.num_trials):
+                personality = random.choice(personalities)
+                logger.info("Selected personality: %s", tokenizer.decode(chain(*personality)))
+                personality_sentences = tokenizer.decode(chain(*personality)).split('. ')
+                history = []
+                num_to_break = 0
+                if args.query_type == 'permute':
+                    queries = []
+                    # for i in range(10):
+                    #     #queries = [' '.join(random.sample(i.split(), len(i.split()))) for i in personality_sentences]
+                    #     queries.append(' '.join(random.sample(list(set(' '.join(personality_sentences).replace('.','').split())), random.randint(5,8))))
+                    # queries = list(set(queries))
+                    temp = ' '.join(personality_sentences)
+                    queries = [' '.join(random.sample(list(set(temp.split())), len(list(set(temp.split())))))]
+                while True:
+                    raw_text = random.choice(queries)
+                    logger.info("B:  %s", raw_text)
+                    while not raw_text:
+                        print('Prompt should not be empty!')
+                        raw_text = input(">>> ")
+                    history.append(tokenizer.encode(raw_text))
+                    with torch.no_grad():
+                        out_ids = interact.sample_sequence(personality, history, tokenizer, model, args)
+                    history.append(out_ids)
+                    history = history[-(2*args.max_history+1):]
+                    out_text = tokenizer.decode(out_ids, skip_special_tokens=True)
+                    logger.info("A:  %s", out_text)
+                    #print(out_text)
+                    num_to_break += 1
+                    #Each pair is (personality, output). Instead of having a batch, find sentence similarity using some distance metric
+                    #to find most relevant personality pair out of all
+                    if args.split_output:
+                        out_text_list = out_text.split('.')
+                        out_text_list = list(filter(None, out_text_list))
+                        batch_of_pairs = [[personality_sent, o_text] for personality_sent in personality_sentences for o_text in out_text_list if '?' not in o_text]
+
+                    else:
+                        if '?' in out_text:
+                            continue
+                        batch_of_pairs = [[personality_sent, out_text] for personality_sent in personality_sentences]
+                    
+                    # labels = torch.tensor([[0], [2], [1], [0], [0]]).to(args.device)
+                    labels = torch.zeros(len(batch_of_pairs),1).long().to(args.device)
+                    probs = infer(inf_tokenizer, inf_model, batch_of_pairs, labels, args.device)
+                    confidence, pred = get_predictions(probs)
+                    # print("#"*5,"Contradiction","#"*5)
+                    contradiction_pairs = [val for val, ind in zip(batch_of_pairs,pred) if ind==0]
+                    #Break dialogue if there is a contradiction
+                    if len(contradiction_pairs) != 0:
+                        num_breaks += 1
+                        total_utterances += num_to_break
+                        logger.info("%s", contradiction_pairs)
+                        logger.info("Breakage at  %s", num_to_break)
+                        logger.info("#"*15)
+                        break
+                    #Break dialogue if max utterance limit is reached
+                    if num_to_break >= args.max_utterance:
+                        total_utterances += num_to_break
+                        logger.info("Max utterance reached")
+                        logger.info("#"*15)
+                        break
+                    # pprint(contradiction_pairs)
+                    # print("#"*5,"Entailment","#"*5)
+                    # neutral_pairs = [val for val, ind in zip(batch_of_pairs,pred) if ind==1]
+                    # pprint(neutral_pairs)
+                    # print("#"*5,"Neutral","#"*5)
+                    # entailment_pairs = [val for val, ind in zip(batch_of_pairs,pred) if ind==2]
+                    # pprint(entailment_pairs)
+            avg_breakpoint = total_utterances / args.num_trials
+            logger.info("Number of total breaks in {} trials is {}".format(args.num_trials, num_breaks))
+            logger.info("Average breakpoint over {} trials is {}".format(args.num_trials,avg_breakpoint))
+        else:
+            while True:
+                raw_text = input(">>> ")
+                while not raw_text:
+                    print('Prompt should not be empty!')
+                    raw_text = input(">>> ")
+                history.append(tokenizer.encode(raw_text))
+                with torch.no_grad():
+                    out_ids = interact.sample_sequence(personality, history, tokenizer, model, args)
+                history.append(out_ids)
+                history = history[-(2*args.max_history+1):]
+                out_text = tokenizer.decode(out_ids, skip_special_tokens=True)
+                print(out_text)
+
+                #Each pair is (personality, output). Instead of having a batch, find sentence similarity using some distance metric
+                #to find most relevant personality pair out of all
+                if args.split_output:
+                    out_text_list = out_text.split('.')
+                    out_text_list = list(filter(None, out_text_list))
+                    batch_of_pairs = [[personality_sent, o_text] for personality_sent in personality_sentences for o_text in out_text_list]
+
+                else:
+                    batch_of_pairs = [[personality_sent, out_text] for personality_sent in personality_sentences]
+                
+                # labels = torch.tensor([[0], [2], [1], [0], [0]]).to(args.device)
+                labels = torch.zeros(len(batch_of_pairs),1).long().to(args.device)
+                probs = infer(inf_tokenizer, inf_model, batch_of_pairs, labels, args.device)
+                confidence, pred = get_predictions(probs)
+                print("#"*5,"Contradiction","#"*5)
+                contradiction_pairs = [val for val, ind in zip(batch_of_pairs,pred) if ind==0]
+                pprint(contradiction_pairs)
+                print("#"*5,"Entailment","#"*5)
+                neutral_pairs = [val for val, ind in zip(batch_of_pairs,pred) if ind==1]
+                pprint(neutral_pairs)
+                print("#"*5,"Neutral","#"*5)
+                entailment_pairs = [val for val, ind in zip(batch_of_pairs,pred) if ind==2]
+                pprint(entailment_pairs)
+                # pprint(list(zip(batch_of_pairs, pred)))
 
 
 if __name__=='__main__':
