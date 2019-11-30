@@ -152,7 +152,7 @@ def run():
     parser.add_argument("--num_trials", type=int, default=1, help="Number of times a dialogue instance happens (each dialogue ends on breakage). This is for consistency evaluation.")
     parser.add_argument("--max_utterance", type=int, default=20, help="Max number of utterances in a dialogue. End dialogue if this (or breakage) is reached, whichever happens first")
     parser.add_argument("--log_file", type=str, default="output.log", help="Name of output log")
-
+    parser.add_argument("--query_type", type=str, default="basic", help="Type of input that is fed to the model")
     args = parser.parse_args()
 
     logging.basicConfig(filename=args.log_file, level=logging.INFO)
@@ -293,6 +293,7 @@ def run():
     else:
         if args.num_trials !=1:
             total_utterances = 0
+            num_breaks = 0
             queries = [
                 'what is your job?',
                 'how many children do you have?',
@@ -305,13 +306,21 @@ def run():
                 'do you have any pets?',
                 'do you like animals?'
             ]
-
+            
             for trial in range(args.num_trials):
                 personality = random.choice(personalities)
                 logger.info("Selected personality: %s", tokenizer.decode(chain(*personality)))
                 personality_sentences = tokenizer.decode(chain(*personality)).split('. ')
                 history = []
                 num_to_break = 0
+                if args.query_type == 'permute':
+                    queries = []
+                    # for i in range(10):
+                    #     #queries = [' '.join(random.sample(i.split(), len(i.split()))) for i in personality_sentences]
+                    #     queries.append(' '.join(random.sample(list(set(' '.join(personality_sentences).replace('.','').split())), random.randint(5,8))))
+                    # queries = list(set(queries))
+                    temp = ' '.join(personality_sentences)
+                    queries = [' '.join(random.sample(list(set(temp.split())), len(list(set(temp.split())))))]
                 while True:
                     raw_text = random.choice(queries)
                     logger.info("B:  %s", raw_text)
@@ -332,9 +341,11 @@ def run():
                     if args.split_output:
                         out_text_list = out_text.split('.')
                         out_text_list = list(filter(None, out_text_list))
-                        batch_of_pairs = [[personality_sent, o_text] for personality_sent in personality_sentences for o_text in out_text_list]
+                        batch_of_pairs = [[personality_sent, o_text] for personality_sent in personality_sentences for o_text in out_text_list if '?' not in o_text]
 
                     else:
+                        if '?' in out_text:
+                            continue
                         batch_of_pairs = [[personality_sent, out_text] for personality_sent in personality_sentences]
                     
                     # labels = torch.tensor([[0], [2], [1], [0], [0]]).to(args.device)
@@ -345,13 +356,14 @@ def run():
                     contradiction_pairs = [val for val, ind in zip(batch_of_pairs,pred) if ind==0]
                     #Break dialogue if there is a contradiction
                     if len(contradiction_pairs) != 0:
+                        num_breaks += 1
                         total_utterances += num_to_break
                         logger.info("%s", contradiction_pairs)
                         logger.info("Breakage at  %s", num_to_break)
                         logger.info("#"*15)
                         break
                     #Break dialogue if max utterance limit is reached
-                    if num_to_break == args.max_utterance:
+                    if num_to_break >= args.max_utterance:
                         total_utterances += num_to_break
                         logger.info("Max utterance reached")
                         logger.info("#"*15)
@@ -364,6 +376,7 @@ def run():
                     # entailment_pairs = [val for val, ind in zip(batch_of_pairs,pred) if ind==2]
                     # pprint(entailment_pairs)
             avg_breakpoint = total_utterances / args.num_trials
+            logger.info("Number of total breaks in {} trials is {}".format(args.num_trials, num_breaks))
             logger.info("Average breakpoint over {} trials is {}".format(args.num_trials,avg_breakpoint))
         else:
             while True:
