@@ -5,6 +5,7 @@ from itertools import chain
 from pprint import pformat
 from pprint import pprint
 import warnings
+import pickle
 
 import torch
 import torch.nn.functional as F
@@ -343,15 +344,18 @@ def run():
                 personality_sentences = tokenizer.decode(chain(*personality)).split('. ')
                 history = []
                 num_to_break = 0
-                if args.query_type == 'permute':
-                    queries = []
-                    # for i in range(10):
-                    #     #queries = [' '.join(random.sample(i.split(), len(i.split()))) for i in personality_sentences]
-                    #     queries.append(' '.join(random.sample(list(set(' '.join(personality_sentences).replace('.','').split())), random.randint(5,8))))
-                    # queries = list(set(queries))
-                    temp = ' '.join(personality_sentences)
-                    queries = [' '.join(random.sample(list(set(temp.split())), len(list(set(temp.split())))))]
                 while True:
+                    if args.query_type == 'permute':
+                        queries = []
+                        # for i in range(10):
+                        #     #queries = [' '.join(random.sample(i.split(), len(i.split()))) for i in personality_sentences]
+                        #     queries.append(' '.join(random.sample(list(set(' '.join(personality_sentences).replace('.','').split())), random.randint(5,8))))
+                        # queries = list(set(queries))
+                        temp = ' '.join(personality_sentences)
+                        queries = [' '.join(random.sample(list(set(temp.split())), len(list(set(temp.split())))))]
+                    import pdb
+                    pdb.set_trace()
+
                     raw_text = random.choice(queries)
                     logger.info("B:  %s", raw_text)
                     while not raw_text:
@@ -399,6 +403,11 @@ def run():
                         cont_logger.info("Contradiction confidence %s", [conf for conf, pr in zip(confidence, pred) if pr == 0])
                         cont_logger.info("Breakage at  %s", num_to_break)
                         cont_logger.info("#"*15)
+                        # dump_data = {
+                        #     'sentences': contradiction_pairs,
+                        #     'confidences': [prob for prob, pr in zip(probs, pred) if pr == 0],
+                        #     'contra_conf': [conf for conf, pr in zip(confidence, pred) if pr == 0]
+                        # }
                         # cont_logger.info("NEUTRAL")
                         # neutral_pairs = [val for val, ind in zip(batch_of_pairs,pred) if ind==1]
                         # cont_logger.info("%s", neutral_pairs)
