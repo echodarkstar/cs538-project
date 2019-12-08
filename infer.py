@@ -353,8 +353,6 @@ def run():
                         # queries = list(set(queries))
                         temp = ' '.join(personality_sentences)
                         queries = [' '.join(random.sample(list(set(temp.split())), len(list(set(temp.split())))))]
-                    import pdb
-                    pdb.set_trace()
 
                     raw_text = random.choice(queries)
                     logger.info("B:  %s", raw_text)
