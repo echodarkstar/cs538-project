@@ -20,7 +20,6 @@ interact = importlib.import_module("transfer-learning-conv-ai.interact")
 attacks = importlib.import_module("universal-triggers.attacks")
 trigger_utils = importlib.import_module("universal-triggers.utils")
 
-shared_array = []
 ######### TRIGGER RELATED FUNCTIONS #################
 # From create_adv_token.py in universal-triggers
 
@@ -115,111 +114,30 @@ def infer(tokenizer, model, batch_of_pairs, labels, device):
     return probs
 
 
-def run_inference():
+def run_inference(sentence1,sentence2):
     batch_of_pairs = [
-        ['Roberta is a heavily optimized version of BERT.', 'Roberta is not very optimized.'],
-        ['Roberta is a heavily optimized version of BERT.', 'Roberta is based on BERT.'],
-        ['potatoes are awesome.', 'I like to run.'],
-        ['Mars is very far from earth.', 'Mars is very close.'],
+        [sentence1,sentence2]
     ]
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    labels = torch.tensor([[0], [2], [1], [0]]).to(device)
+    labels = torch.zeros([len(batch_of_pairs)],dtype=torch.long).to(device)
     # batch_of_pairs = [["Roberta is a heavily optimized version of BERT", "Roberta is not very optimized"]]
     # labels = torch.tensor([0]).unsqueeze(0)
 
-    tokenizer = RobertaTokenizer.from_pretrained('roberta-large-mnli')
-    model = RobertaForSequenceClassification.from_pretrained('roberta-large-mnli')
+    tokenizer = RobertaTokenizer.from_pretrained('roberta-dnli')
+    model = RobertaForSequenceClassification.from_pretrained('roberta-dnli')
 
     model.to(device)
     model.eval()
 
     probs = infer(tokenizer, model, batch_of_pairs, labels, device)
     confidence, pred = get_predictions(probs)
+    class_mapping = {0:'Contradiction',1:'Entailment',2:'Neutral'}
+    print("Confidence: "+str(confidence.item()))
+    print("Predicted Class: "+str(class_mapping[pred.item()]))
+    print("Sentence 1: "+sentence1)
+    print("Sentence 2: "+sentence2)
 
-
-######################################################
-def permute_num_trials(trial,personalities_list,args,tokenizer,num_breaks,logger,total_utterances,inf_tokenizer,inf_model,model):
-    personality = personalities_list[trial]  # = random.choice(personalities)
-    logging_string = ""
-    all_personalities = ''.join(tokenizer.decode(chain(*personality)))
-    logging_string += "Selected personality: "+str(all_personalities)+"\n"
-    #logger.info("Selected personality: %s", tokenizer.decode(chain(*personality)))
-    personality_sentences = tokenizer.decode(chain(*personality)).split('. ')
-    history = []
-    num_to_break = 0
-    if args.query_type == 'permute':
-        queries = []
-        # for i in range(10):
-        #     #queries = [' '.join(random.sample(i.split(), len(i.split()))) for i in personality_sentences]
-        #     queries.append(' '.join(random.sample(list(set(' '.join(personality_sentences).replace('.','').split())), random.randint(5,8))))
-        # queries = list(set(queries))
-        temp = ' '.join(personality_sentences)
-        queries = [' '.join(random.sample(list(set(temp.split())), len(list(set(temp.split())))))]
-    while True:
-        raw_text = random.choice(queries)
-        logging_string += "B: "+raw_text+"\n"
-        #logger.info("B:  %s", raw_text)
-        while not raw_text:
-            print('Prompt should not be empty!')
-            raw_text = input(">>> ")
-        history.append(tokenizer.encode(raw_text))
-        with torch.no_grad():
-            out_ids = interact.sample_sequence(personality, history, tokenizer, model, args)
-        history.append(out_ids)
-        history = history[-(2 * args.max_history + 1):]
-        out_text = tokenizer.decode(out_ids, skip_special_tokens=True)
-        logging_string += "A: "+out_text+"\n"
-        #logger.info("A:  %s", out_text)
-        # print(out_text)
-        num_to_break += 1
-        # Each pair is (personality, output). Instead of having a batch, find sentence similarity using some distance metric
-        # to find most relevant personality pair out of all
-        if args.split_output:
-            out_text_list = out_text.split('.')
-            out_text_list = list(filter(None, out_text_list))
-            batch_of_pairs = [[personality_sent, o_text] for personality_sent in personality_sentences for
-                              o_text in out_text_list if '?' not in o_text]
-
-        else:
-            if '?' in out_text:
-                continue
-            batch_of_pairs = [[personality_sent, out_text] for personality_sent in personality_sentences]
-
-        # labels = torch.tensor([[0], [2], [1], [0], [0]]).to(args.device)
-        labels = torch.zeros(len(batch_of_pairs), 1).long().to(args.device)
-        probs = infer(inf_tokenizer, inf_model, batch_of_pairs, labels, args.device)
-        confidence, pred = get_predictions(probs)
-        # print("#"*5,"Contradiction","#"*5)
-        contradiction_pairs = [val for val, ind in zip(batch_of_pairs, pred) if ind == 0]
-        # Break dialogue if there is a contradiction
-        if len(contradiction_pairs) != 0:
-            num_breaks += 1
-            total_utterances += num_to_break
-            logging_string += str(contradiction_pairs) +"\n"
-            logging_string += "Breakage at "+str(num_to_break)+"\n"
-            logging_string += "###################################\n"
-            # logger.info("%s", contradiction_pairs)
-            # logger.info("Breakage at  %s", num_to_break)
-            # logger.info("#" * 15)
-            break
-        # Break dialogue if max utterance limit is reached
-        if num_to_break >= args.max_utterance:
-            total_utterances += num_to_break
-            logging_string += "Max utterance reached\n"
-            logging_string += "###################################\n"
-            # logger.info("Max utterance reached")
-            # logger.info("#" * 15)
-            break
-    logger.info(logging_string)
-    shared_array.append((total_utterances,num_to_break,num_breaks))
-        # pprint(contradiction_pairs)
-        # print("#"*5,"Entailment","#"*5)
-        # neutral_pairs = [val for val, ind in zip(batch_of_pairs,pred) if ind==1]
-        # pprint(neutral_pairs)
-        # print("#"*5,"Neutral","#"*5)
-        # entailment_pairs = [val for val, ind in zip(batch_of_pairs,pred) if ind==2]
-        # pprint(entailment_pairs)
 
 ######### FUNCTION TO RUN EVERYTHING #################
 
@@ -251,6 +169,9 @@ def run():
                         help="Max number of utterances in a dialogue. End dialogue if this (or breakage) is reached, whichever happens first")
     parser.add_argument("--log_file", type=str, default="output.log", help="Name of output log")
     parser.add_argument("--query_type", type=str, default="basic", help="Type of input that is fed to the model")
+    parser.add_argument("--run_inference", type=bool, default=False, help="Run inference flag")
+    parser.add_argument("--sentence1", type=str, default="", help="Sentence1 to run inference on")  
+    parser.add_argument("--sentence2", type=str, default="", help="Sentence2 to run inference on")  
     args = parser.parse_args()
 
     FORMAT = '%(asctime)-15s %(message)s'
@@ -259,277 +180,276 @@ def run():
 
     logger.info(pformat(args))
 
-    if args.model_checkpoint == "":
-        if args.model == 'gpt2':
-            raise ValueError("Interacting with GPT2 requires passing a finetuned model_checkpoint")
-        else:
-            args.model_checkpoint = interact.download_pretrained_model()
-
-    # This seeding makes sense for reproducibility
-    # But if we want to make repeated trials and calculate some aggreate measure
-    # then randomness should be preserved
-    # this means personality sampling will also happen randomly which is nice
-    # Only seed when you aren't conducting consistency evaluation
-    if args.num_trials == 1:
-        random.seed(args.seed)
-        torch.random.manual_seed(args.seed)
-        torch.cuda.manual_seed(args.seed)
-
-    logger.info("Get pretrained model and tokenizer")
-    tokenizer_class, model_class = (interact.GPT2Tokenizer, interact.GPT2LMHeadModel) if args.model == 'gpt2' else (
-    interact.OpenAIGPTTokenizer, interact.OpenAIGPTLMHeadModel)
-    tokenizer = tokenizer_class.from_pretrained(args.model_checkpoint)
-    model = model_class.from_pretrained(args.model_checkpoint)
-    model.eval()
-    model.to(args.device)
-    interact.add_special_tokens_(model, tokenizer)
-
-    add_hooks(model)  # add gradient hooks to embeddings
-    embedding_weight = get_embedding_weight(model)  # save the word embedding matrix
-
-    logger.info("Sample a personality")
-    dataset = interact.get_dataset(tokenizer, args.dataset_path, args.dataset_cache)
-    personalities = [dialog["personality"] for dataset in dataset.values() for dialog in dataset]
-    personality = random.choice(personalities)
-    logger.info("Selected personality: %s", tokenizer.decode(chain(*personality)))
-    personality_sentences = tokenizer.decode(chain(*personality)).split('. ')
-    history = []
-
-    # Target text should be contradictions to the personality sentences
-    # For now it is hardcoded.
-    target_texts = [
-        "i hate vinyl records",
-        "vinyl records are the worst",
-        "i am still",
-        "i am very lazy"
-        "i do not fix airplanes",
-        "i can't fix the world",
-        "the world cannot be fixed"
-    ]
-
-    # batch and pad the target tokens
-    target_tokens = make_target_batch(tokenizer, args.device, target_texts)
-
-    # Inference model
-    inf_tokenizer = RobertaTokenizer.from_pretrained('roberta-dnli')
-    inf_model = RobertaForSequenceClassification.from_pretrained('roberta-dnli')
-
-    inf_model.to(args.device)
-    inf_model.eval()
-
-    # import pdb
-    # pdb.set_trace()
-
-    if args.create_trigger:
-        for _ in range(10):  # different random restarts of the trigger
-            total_vocab_size = 40483  # total number of subword pieces in the GPT-2 model
-            trigger_token_length = 6  # how many subword pieces in the trigger
-            batch_size = target_tokens.shape[0]
-
-            # sample random initial trigger
-            trigger_tokens = np.random.randint(total_vocab_size, size=trigger_token_length)
-            print(tokenizer.decode(trigger_tokens))
-
-            # get initial loss for the trigger
-            model.zero_grad()
-            loss = get_loss(model, batch_size, trigger_tokens, target_tokens, args.device)
-            best_loss = loss
-            counter = 0
-            end_iter = False
-            for _ in range(50):  # this many updates of the entire trigger sequence
-                for token_to_flip in range(0, trigger_token_length):  # for each token in the trigger
-                    if end_iter:  # no loss improvement over whole sweep -> continue to new random restart
-                        continue
-
-                    # Get average gradient w.r.t. the triggers
-                    loss.backward()
-                    averaged_grad = torch.sum(trigger_utils.extracted_grads[0], dim=0)
-                    # import pdb
-                    # pdb.set_trace()
-                    averaged_grad = averaged_grad[token_to_flip].unsqueeze(0)
-
-                    # Use hotflip (linear approximation) attack to get the top num_candidates
-                    candidates = attacks.hotflip_attack(averaged_grad, embedding_weight,
-                                                        [trigger_tokens[token_to_flip]],
-                                                        increase_loss=False, num_candidates=100)[0]
-
-                    # try all the candidates and pick the best
-                    curr_best_loss = 999999
-                    curr_best_trigger_tokens = None
-                    for cand in candidates:
-                        # replace one token with new candidate
-                        candidate_trigger_tokens = deepcopy(trigger_tokens)
-                        candidate_trigger_tokens[token_to_flip] = cand
-
-                        # get loss, update current best if its lower loss
-                        curr_loss = get_loss(model, batch_size, candidate_trigger_tokens,
-                                             target_tokens, args.device)
-                        if curr_loss < curr_best_loss:
-                            curr_best_loss = curr_loss
-                            curr_best_trigger_tokens = deepcopy(candidate_trigger_tokens)
-
-                    # Update overall best if the best current candidate is better
-                    if curr_best_loss < best_loss:
-                        counter = 0  # used to exit early if no improvements in the trigger
-                        best_loss = curr_best_loss
-                        trigger_tokens = deepcopy(curr_best_trigger_tokens)
-                        print("Loss: " + str(best_loss.data.item()))
-                        print(tokenizer.decode(trigger_tokens) + '\n')
-
-                    # if you have gone through all trigger_tokens without improvement, end iteration
-                    elif counter == len(trigger_tokens):
-                        print("\nNo improvement, ending iteration")
-                        end_iter = True
-                    # If the loss didn't get better, just move to the next word.
-                    else:
-                        counter = counter + 1
-
-                    # reevaluate the best candidate so you can backprop into it at next iteration
-                    model.zero_grad()
-                    loss = get_loss(model, batch_size, trigger_tokens, target_tokens, args.device)
-
-            # Print final trigger and get 10 samples from the model
-            print("Loss: " + str(best_loss.data.item()))
-            print(tokenizer.decode(trigger_tokens))
+    if args.run_inference == True:
+        run_inference(args.sentence1,args.sentence2)
     else:
-        if args.num_trials != 1:
-            total_utterances = 0
-            num_breaks = 0
-            queries = [
-                'what is your job?',
-                'how many children do you have?',
-                'what kind of music do you like?',
-                'where do you work?',
-                'are you single?',
-                'how do you feel?',
-                'what is your favourite hobby?',
-                'what do you like to do?',
-                'do you have any pets?',
-                'do you like animals?'
-            ]
-            personalities_list = []
-            for trial in range(args.num_trials):
-                personalities_list.append(random.choice(personalities))
-            Parallel(n_jobs=10, prefer="threads",require='sharedmem')\
-                (delayed(permute_num_trials)(trial,personalities_list,args,tokenizer,num_breaks,logger,total_utterances,
-                                             inf_tokenizer,inf_model,model)
-                                                 for trial in range(args.num_trials))
-            # for trial in range(args.num_trials):
-            #     personality = personalities_list[trial] #= random.choice(personalities)
-            #     logger.info("Selected personality: %s", tokenizer.decode(chain(*personality)))
-            #     personality_sentences = tokenizer.decode(chain(*personality)).split('. ')
-            #     history = []
-            #     num_to_break = 0
-            #     if args.query_type == 'permute':
-            #         queries = []
-            #         # for i in range(10):
-            #         #     #queries = [' '.join(random.sample(i.split(), len(i.split()))) for i in personality_sentences]
-            #         #     queries.append(' '.join(random.sample(list(set(' '.join(personality_sentences).replace('.','').split())), random.randint(5,8))))
-            #         # queries = list(set(queries))
-            #         temp = ' '.join(personality_sentences)
-            #         queries = [' '.join(random.sample(list(set(temp.split())), len(list(set(temp.split())))))]
-            #     while True:
-            #         raw_text = random.choice(queries)
-            #         logger.info("B:  %s", raw_text)
-            #         while not raw_text:
-            #             print('Prompt should not be empty!')
-            #             raw_text = input(">>> ")
-            #         history.append(tokenizer.encode(raw_text))
-            #         with torch.no_grad():
-            #             out_ids = interact.sample_sequence(personality, history, tokenizer, model, args)
-            #         history.append(out_ids)
-            #         history = history[-(2 * args.max_history + 1):]
-            #         out_text = tokenizer.decode(out_ids, skip_special_tokens=True)
-            #         logger.info("A:  %s", out_text)
-            #         # print(out_text)
-            #         num_to_break += 1
-            #         # Each pair is (personality, output). Instead of having a batch, find sentence similarity using some distance metric
-            #         # to find most relevant personality pair out of all
-            #         if args.split_output:
-            #             out_text_list = out_text.split('.')
-            #             out_text_list = list(filter(None, out_text_list))
-            #             batch_of_pairs = [[personality_sent, o_text] for personality_sent in personality_sentences for
-            #                               o_text in out_text_list if '?' not in o_text]
-            #
-            #         else:
-            #             if '?' in out_text:
-            #                 continue
-            #             batch_of_pairs = [[personality_sent, out_text] for personality_sent in personality_sentences]
-            #
-            #         # labels = torch.tensor([[0], [2], [1], [0], [0]]).to(args.device)
-            #         labels = torch.zeros(len(batch_of_pairs), 1).long().to(args.device)
-            #         probs = infer(inf_tokenizer, inf_model, batch_of_pairs, labels, args.device)
-            #         confidence, pred = get_predictions(probs)
-            #         # print("#"*5,"Contradiction","#"*5)
-            #         contradiction_pairs = [val for val, ind in zip(batch_of_pairs, pred) if ind == 0]
-            #         # Break dialogue if there is a contradiction
-            #         if len(contradiction_pairs) != 0:
-            #             num_breaks += 1
-            #             total_utterances += num_to_break
-            #             logger.info("%s", contradiction_pairs)
-            #             logger.info("Breakage at  %s", num_to_break)
-            #             logger.info("#" * 15)
-            #             break
-            #         # Break dialogue if max utterance limit is reached
-            #         if num_to_break >= args.max_utterance:
-            #             total_utterances += num_to_break
-            #             logger.info("Max utterance reached")
-            #             logger.info("#" * 15)
-            #             break
-            #         # pprint(contradiction_pairs)
-            #         # print("#"*5,"Entailment","#"*5)
-            #         # neutral_pairs = [val for val, ind in zip(batch_of_pairs,pred) if ind==1]
-            #         # pprint(neutral_pairs)
-            #         # print("#"*5,"Neutral","#"*5)
-            #         # entailment_pairs = [val for val, ind in zip(batch_of_pairs,pred) if ind==2]
-            #         # pprint(entailment_pairs)
-            #
-            for item in shared_array:
-                curr_utterances, curr_num_to_break, curr_num_breaks = item[0], item[1], item[2]
-                total_utterances += curr_utterances
-                num_breaks += curr_num_breaks
-            avg_breakpoint = total_utterances / args.num_trials
-            logger.info("Number of total breaks in {} trials is {}".format(args.num_trials, num_breaks))
-            logger.info("Average breakpoint over {} trials is {}".format(args.num_trials, avg_breakpoint))
+        if args.model_checkpoint == "":
+            if args.model == 'gpt2':
+                raise ValueError("Interacting with GPT2 requires passing a finetuned model_checkpoint")
+            else:
+                args.model_checkpoint = interact.download_pretrained_model()
+
+        # This seeding makes sense for reproducibility
+        # But if we want to make repeated trials and calculate some aggreate measure
+        # then randomness should be preserved
+        # this means personality sampling will also happen randomly which is nice
+        # Only seed when you aren't conducting consistency evaluation
+        if args.num_trials == 1:
+            random.seed(args.seed)
+            torch.random.manual_seed(args.seed)
+            torch.cuda.manual_seed(args.seed)
+
+        logger.info("Get pretrained model and tokenizer")
+        tokenizer_class, model_class = (interact.GPT2Tokenizer, interact.GPT2LMHeadModel) if args.model == 'gpt2' else (
+        interact.OpenAIGPTTokenizer, interact.OpenAIGPTLMHeadModel)
+        tokenizer = tokenizer_class.from_pretrained(args.model_checkpoint)
+        model = model_class.from_pretrained(args.model_checkpoint)
+        model.eval()
+        model.to(args.device)
+        interact.add_special_tokens_(model, tokenizer)
+
+        add_hooks(model)  # add gradient hooks to embeddings
+        embedding_weight = get_embedding_weight(model)  # save the word embedding matrix
+
+        logger.info("Sample a personality")
+        dataset = interact.get_dataset(tokenizer, args.dataset_path, args.dataset_cache)
+        personalities = [dialog["personality"] for dataset in dataset.values() for dialog in dataset]
+        personality = random.choice(personalities)
+        logger.info("Selected personality: %s", tokenizer.decode(chain(*personality)))
+        personality_sentences = tokenizer.decode(chain(*personality)).split('. ')
+        history = []
+
+        # Target text should be contradictions to the personality sentences
+        # For now it is hardcoded.
+        target_texts = [
+            "i hate vinyl records",
+            "vinyl records are the worst",
+            "i am still",
+            "i am very lazy"
+            "i do not fix airplanes",
+            "i can't fix the world",
+            "the world cannot be fixed"
+        ]
+
+        # batch and pad the target tokens
+        target_tokens = make_target_batch(tokenizer, args.device, target_texts)
+
+        # Inference model
+        inf_tokenizer = RobertaTokenizer.from_pretrained('roberta-dnli')
+        inf_model = RobertaForSequenceClassification.from_pretrained('roberta-dnli')
+
+        inf_model.to(args.device)
+        inf_model.eval()
+
+        # import pdb
+        # pdb.set_trace()
+
+        if args.create_trigger:
+            for _ in range(10):  # different random restarts of the trigger
+                total_vocab_size = 40483  # total number of subword pieces in the GPT-2 model
+                trigger_token_length = 6  # how many subword pieces in the trigger
+                batch_size = target_tokens.shape[0]
+
+                # sample random initial trigger
+                trigger_tokens = np.random.randint(total_vocab_size, size=trigger_token_length)
+                print(tokenizer.decode(trigger_tokens))
+
+                # get initial loss for the trigger
+                model.zero_grad()
+                loss = get_loss(model, batch_size, trigger_tokens, target_tokens, args.device)
+                best_loss = loss
+                counter = 0
+                end_iter = False
+                for _ in range(50):  # this many updates of the entire trigger sequence
+                    for token_to_flip in range(0, trigger_token_length):  # for each token in the trigger
+                        if end_iter:  # no loss improvement over whole sweep -> continue to new random restart
+                            continue
+
+                        # Get average gradient w.r.t. the triggers
+                        loss.backward()
+                        averaged_grad = torch.sum(trigger_utils.extracted_grads[0], dim=0)
+                        # import pdb
+                        # pdb.set_trace()
+                        averaged_grad = averaged_grad[token_to_flip].unsqueeze(0)
+
+                        # Use hotflip (linear approximation) attack to get the top num_candidates
+                        candidates = attacks.hotflip_attack(averaged_grad, embedding_weight,
+                                                            [trigger_tokens[token_to_flip]],
+                                                            increase_loss=False, num_candidates=100)[0]
+
+                        # try all the candidates and pick the best
+                        curr_best_loss = 999999
+                        curr_best_trigger_tokens = None
+                        for cand in candidates:
+                            # replace one token with new candidate
+                            candidate_trigger_tokens = deepcopy(trigger_tokens)
+                            candidate_trigger_tokens[token_to_flip] = cand
+
+                            # get loss, update current best if its lower loss
+                            curr_loss = get_loss(model, batch_size, candidate_trigger_tokens,
+                                                target_tokens, args.device)
+                            if curr_loss < curr_best_loss:
+                                curr_best_loss = curr_loss
+                                curr_best_trigger_tokens = deepcopy(candidate_trigger_tokens)
+
+                        # Update overall best if the best current candidate is better
+                        if curr_best_loss < best_loss:
+                            counter = 0  # used to exit early if no improvements in the trigger
+                            best_loss = curr_best_loss
+                            trigger_tokens = deepcopy(curr_best_trigger_tokens)
+                            print("Loss: " + str(best_loss.data.item()))
+                            print(tokenizer.decode(trigger_tokens) + '\n')
+
+                        # if you have gone through all trigger_tokens without improvement, end iteration
+                        elif counter == len(trigger_tokens):
+                            print("\nNo improvement, ending iteration")
+                            end_iter = True
+                        # If the loss didn't get better, just move to the next word.
+                        else:
+                            counter = counter + 1
+
+                        # reevaluate the best candidate so you can backprop into it at next iteration
+                        model.zero_grad()
+                        loss = get_loss(model, batch_size, trigger_tokens, target_tokens, args.device)
+
+                # Print final trigger and get 10 samples from the model
+                print("Loss: " + str(best_loss.data.item()))
+                print(tokenizer.decode(trigger_tokens))
         else:
-            while True:
-                raw_text = input(">>> ")
-                while not raw_text:
-                    print('Prompt should not be empty!')
+            if args.num_trials != 1:
+                total_utterances = 0
+                num_breaks = 0
+                queries = [
+                    'what is your job?',
+                    'how many children do you have?',
+                    'what kind of music do you like?',
+                    'where do you work?',
+                    'are you single?',
+                    'how do you feel?',
+                    'what is your favourite hobby?',
+                    'what do you like to do?',
+                    'do you have any pets?',
+                    'do you like animals?'
+                ]
+                personalities_list = []
+                for trial in range(args.num_trials):
+                    personalities_list.append(random.choice(personalities))
+                for trial in range(args.num_trials):
+                    personality = personalities_list[trial] #= random.choice(personalities)
+                    logger.info("Selected personality: %s", tokenizer.decode(chain(*personality)))
+                    personality_sentences = tokenizer.decode(chain(*personality)).split('. ')
+                    history = []
+                    num_to_break = 0
+                    if args.query_type == 'permute':
+                        queries = []
+                        # for i in range(10):
+                        #     #queries = [' '.join(random.sample(i.split(), len(i.split()))) for i in personality_sentences]
+                        #     queries.append(' '.join(random.sample(list(set(' '.join(personality_sentences).replace('.','').split())), random.randint(5,8))))
+                        # queries = list(set(queries))
+                        temp = ' '.join(personality_sentences)
+                        queries = [' '.join(random.sample(list(set(temp.split())), len(list(set(temp.split())))))]
+                    while True:
+                        raw_text = random.choice(queries)
+                        logger.info("B:  %s", raw_text)
+                        while not raw_text:
+                            print('Prompt should not be empty!')
+                            raw_text = input(">>> ")
+                        history.append(tokenizer.encode(raw_text))
+                        with torch.no_grad():
+                            out_ids = interact.sample_sequence(personality, history, tokenizer, model, args)
+                        history.append(out_ids)
+                        history = history[-(2 * args.max_history + 1):]
+                        out_text = tokenizer.decode(out_ids, skip_special_tokens=True)
+                        logger.info("A:  %s", out_text)
+                        # print(out_text)
+                        num_to_break += 1
+                        # Each pair is (personality, output). Instead of having a batch, find sentence similarity using some distance metric
+                        # to find most relevant personality pair out of all
+                        if args.split_output:
+                            out_text_list = out_text.split('.')
+                            out_text_list = list(filter(None, out_text_list))
+                            batch_of_pairs = [[personality_sent, o_text] for personality_sent in personality_sentences for
+                                            o_text in out_text_list if '?' not in o_text]
+                
+                        else:
+                            if '?' in out_text:
+                                continue
+                            batch_of_pairs = [[personality_sent, out_text] for personality_sent in personality_sentences]
+                
+                        # labels = torch.tensor([[0], [2], [1], [0], [0]]).to(args.device)
+                        labels = torch.zeros(len(batch_of_pairs), 1).long().to(args.device)
+                        probs = infer(inf_tokenizer, inf_model, batch_of_pairs, labels, args.device)
+                        confidence, pred = get_predictions(probs)
+                        # print("#"*5,"Contradiction","#"*5)
+                        contradiction_pairs = [val for val, ind in zip(batch_of_pairs, pred) if ind == 0]
+                        # Break dialogue if there is a contradiction
+                        if len(contradiction_pairs) != 0:
+                            num_breaks += 1
+                            total_utterances += num_to_break
+                            logger.info("%s", contradiction_pairs)
+                            logger.info("Breakage at  %s", num_to_break)
+                            logger.info("#" * 15)
+                            break
+                        # Break dialogue if max utterance limit is reached
+                        if num_to_break >= args.max_utterance:
+                            total_utterances += num_to_break
+                            logger.info("Max utterance reached")
+                            logger.info("#" * 15)
+                            break
+                        # pprint(contradiction_pairs)
+                        # print("#"*5,"Entailment","#"*5)
+                        # neutral_pairs = [val for val, ind in zip(batch_of_pairs,pred) if ind==1]
+                        # pprint(neutral_pairs)
+                        # print("#"*5,"Neutral","#"*5)
+                        # entailment_pairs = [val for val, ind in zip(batch_of_pairs,pred) if ind==2]
+                        # pprint(entailment_pairs)
+                
+                # for item in shared_array:
+                #     curr_utterances, curr_num_to_break, curr_num_breaks = item[0], item[1], item[2]
+                #     total_utterances += curr_utterances
+                #     num_breaks += curr_num_breaks
+                avg_breakpoint = total_utterances / args.num_trials
+                logger.info("Number of total breaks in {} trials is {}".format(args.num_trials, num_breaks))
+                logger.info("Average breakpoint over {} trials is {}".format(args.num_trials, avg_breakpoint))
+            else:
+                while True:
                     raw_text = input(">>> ")
-                history.append(tokenizer.encode(raw_text))
-                with torch.no_grad():
-                    out_ids = interact.sample_sequence(personality, history, tokenizer, model, args)
-                history.append(out_ids)
-                history = history[-(2 * args.max_history + 1):]
-                out_text = tokenizer.decode(out_ids, skip_special_tokens=True)
-                print(out_text)
+                    while not raw_text:
+                        print('Prompt should not be empty!')
+                        raw_text = input(">>> ")
+                    history.append(tokenizer.encode(raw_text))
+                    with torch.no_grad():
+                        out_ids = interact.sample_sequence(personality, history, tokenizer, model, args)
+                    history.append(out_ids)
+                    history = history[-(2 * args.max_history + 1):]
+                    out_text = tokenizer.decode(out_ids, skip_special_tokens=True)
+                    print(out_text)
 
-                # Each pair is (personality, output). Instead of having a batch, find sentence similarity using some distance metric
-                # to find most relevant personality pair out of all
-                if args.split_output:
-                    out_text_list = out_text.split('.')
-                    out_text_list = list(filter(None, out_text_list))
-                    batch_of_pairs = [[personality_sent, o_text] for personality_sent in personality_sentences for
-                                      o_text in out_text_list]
+                    # Each pair is (personality, output). Instead of having a batch, find sentence similarity using some distance metric
+                    # to find most relevant personality pair out of all
+                    if args.split_output:
+                        out_text_list = out_text.split('.')
+                        out_text_list = list(filter(None, out_text_list))
+                        batch_of_pairs = [[personality_sent, o_text] for personality_sent in personality_sentences for
+                                        o_text in out_text_list]
 
-                else:
-                    batch_of_pairs = [[personality_sent, out_text] for personality_sent in personality_sentences]
+                    else:
+                        batch_of_pairs = [[personality_sent, out_text] for personality_sent in personality_sentences]
 
-                # labels = torch.tensor([[0], [2], [1], [0], [0]]).to(args.device)
-                labels = torch.zeros(len(batch_of_pairs), 1).long().to(args.device)
-                probs = infer(inf_tokenizer, inf_model, batch_of_pairs, labels, args.device)
-                confidence, pred = get_predictions(probs)
-                print("#" * 5, "Contradiction", "#" * 5)
-                contradiction_pairs = [val for val, ind in zip(batch_of_pairs, pred) if ind == 0]
-                pprint(contradiction_pairs)
-                print("#" * 5, "Entailment", "#" * 5)
-                neutral_pairs = [val for val, ind in zip(batch_of_pairs, pred) if ind == 1]
-                pprint(neutral_pairs)
-                print("#" * 5, "Neutral", "#" * 5)
-                entailment_pairs = [val for val, ind in zip(batch_of_pairs, pred) if ind == 2]
-                pprint(entailment_pairs)
-                # pprint(list(zip(batch_of_pairs, pred)))
+                    # labels = torch.tensor([[0], [2], [1], [0], [0]]).to(args.device)
+                    labels = torch.zeros(len(batch_of_pairs), 1).long().to(args.device)
+                    probs = infer(inf_tokenizer, inf_model, batch_of_pairs, labels, args.device)
+                    confidence, pred = get_predictions(probs)
+                    print("#" * 5, "Contradiction", "#" * 5)
+                    contradiction_pairs = [val for val, ind in zip(batch_of_pairs, pred) if ind == 0]
+                    pprint(contradiction_pairs)
+                    print("#" * 5, "Entailment", "#" * 5)
+                    neutral_pairs = [val for val, ind in zip(batch_of_pairs, pred) if ind == 1]
+                    pprint(neutral_pairs)
+                    print("#" * 5, "Neutral", "#" * 5)
+                    entailment_pairs = [val for val, ind in zip(batch_of_pairs, pred) if ind == 2]
+                    pprint(entailment_pairs)
+                    # pprint(list(zip(batch_of_pairs, pred)))
 
 
 if __name__ == '__main__':
