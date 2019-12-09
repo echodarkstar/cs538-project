@@ -398,14 +398,17 @@ def run():
                         cont_logger.info("CONTRADICTIONS")
                         cont_logger.info("%s", contradiction_pairs)
                         cont_logger.info("Confidence %s", [prob for prob, pr in zip(probs, pred) if pr == 0])
-                        cont_logger.info("Contradiction confidence %s", [conf for conf, pr in zip(confidence, pred) if pr == 0])
+                        cont_logger.info("Contradiction confidence %s", [conf.item() for conf, pr in zip(confidence, pred) if pr == 0])
                         cont_logger.info("Breakage at  %s", num_to_break)
                         cont_logger.info("#"*15)
-                        # dump_data = {
-                        #     'sentences': contradiction_pairs,
-                        #     'confidences': [prob for prob, pr in zip(probs, pred) if pr == 0],
-                        #     'contra_conf': [conf for conf, pr in zip(confidence, pred) if pr == 0]
-                        # }
+                        dump_data = {
+                            'sentences': contradiction_pairs,
+                            'confidences': [prob for prob, pr in zip(probs, pred) if pr == 0],
+                            'contra_conf': [conf.item() for conf, pr in zip(confidence, pred) if pr == 0]
+                        }
+                        output = open(args.log_file + '.pkl', 'ab')
+                        pickle.dump(dump_data, output)
+                        output.close()
                         # cont_logger.info("NEUTRAL")
                         # neutral_pairs = [val for val, ind in zip(batch_of_pairs,pred) if ind==1]
                         # cont_logger.info("%s", neutral_pairs)
