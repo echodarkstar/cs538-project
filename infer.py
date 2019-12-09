@@ -129,8 +129,8 @@ def run_inference(sentence1,sentence2):
     class_mapping = {0:'Contradiction',1:'Entailment',2:'Neutral'}
     print("Confidence: "+str(confidence.item()))
     print("Predicted Class: "+str(class_mapping[pred.item()]))
-    print("Sentence 1: "+sentence1)
-    print("Sentence 2: "+sentence2)
+    # print("Sentence 1: "+sentence1)
+    # print("Sentence 2: "+sentence2)
 
 ########## LOGGING UTIL #################################
 
@@ -177,18 +177,21 @@ def run():
     parser.add_argument("--log_file", type=str, default="output", help="Name of output log")
     parser.add_argument("--query_type", type=str, default="basic", help="Type of input that is fed to the model")
     parser.add_argument("--run_inference", type=bool, default=False, help="Run inference flag")
-    parser.add_argument("--sentence1", type=str, default="", help="Sentence1 to run inference on")  
-    parser.add_argument("--sentence2", type=str, default="", help="Sentence2 to run inference on")  
+    # parser.add_argument("--sentence1", type=str, default="", help="Sentence1 to run inference on")  
+    # parser.add_argument("--sentence2", type=str, default="", help="Sentence2 to run inference on")  
     args = parser.parse_args()
 
-    
+
     logger = setup_logger('conversation_logger', args.log_file + ".log")
     cont_logger = setup_logger('cont_logger', args.log_file + "_cont.log")
     # ent_logger = setup_logger('ent_logger', args.log_file + "_ent.log")
     # neut_logger = setup_logger('neut_logger', args.log_file + "_neut.log")
     logger.info(pformat(args))
     if args.run_inference == True:
-        run_inference(args.sentence1,args.sentence2)
+        sentence1 = input("Enter Sentence1:")
+        sentence2 = input("Enter Sentence2:")
+        print("Running inference...")
+        run_inference(sentence1,sentence2)
     else:
         if args.model_checkpoint == "":
             if args.model == 'gpt2':
